@@ -9,13 +9,28 @@ export function useAuth() {
     async function init() {
       try {
         const tg = window.Telegram?.WebApp
+        tg?.ready()
+        tg?.expand()
+
         const tgUser = tg?.initDataUnsafe?.user
-        if (tgUser) {
+
+        if (tgUser?.id) {
+          // Реальный пользователь из Telegram
           const u = await registerUser(tgUser)
           setUser(u)
-        } else if (import.meta.env.DEV) {
-          setUser({ id: 'dev-id', telegram_id: 123, name: 'Dev User', plan: 'pro' })
+        } else {
+          // Fallback — гостевой режим (для браузера вне Telegram)
+          setUser({
+            id: null,
+            telegram_id: null,
+            name: 'Гость',
+            plan: 'free'
+          })
         }
+      } catch(err) {
+        console.error('Auth error:', err)
+        // Даже при ошибке показываем контент
+        setUser({ id: null, name: 'Гость', plan: 'free' })
       } finally {
         setLoading(false)
       }
@@ -31,7 +46,13 @@ export function useLessons() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    getAllLessons().then(setLessons).finally(() => setLoading(false))
+    getAllLessons()
+      .then(data => setLessons(data || []))
+      .catch(err => {
+        console.error('Lessons error:', err)
+        setLessons([])
+      })
+      .finally(() => setLoading(false))
   }, [])
 
   const getLessonsByLevel = (lvl) => lessons.filter(l => l.level === lvl)
@@ -43,8 +64,12 @@ export function useProgress(userId) {
 
   const fetch = useCallback(async () => {
     if (!userId) return
-    const data = await getUserProgress(userId)
-    setProgress(data)
+    try {
+      const data = await getUserProgress(userId)
+      setProgress(data || [])
+    } catch(err) {
+      console.error('Progress error:', err)
+    }
   }, [userId])
 
   useEffect(() => { fetch() }, [fetch])
@@ -53,6 +78,7 @@ export function useProgress(userId) {
     progress.find(p => p.lesson_id === lessonId)?.status || 'not_started'
 
   const complete = async (lessonId) => {
+    if (!userId) return
     await markLessonComplete(userId, lessonId)
     await fetch()
   }
